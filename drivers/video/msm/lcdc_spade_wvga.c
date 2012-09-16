@@ -60,7 +60,7 @@ static uint8_t last_val = BRIGHTNESS_DEFAULT_LEVEL;
 static bool screen_on = true;
 
 
-static struct msm_fb_panel_data spadewvga_panel_data;
+
 
 struct lcm_cmd {
         uint8_t		cmd;
@@ -237,49 +237,6 @@ static int lcm_auo_write_seq(struct lcm_cmd *cmd_table, unsigned size)
 		qspi_send_16bit(cmd_table[i].cmd, cmd_table[i].data);
 	}
         return 0;
-}
-
-static int spade_auo_panel_init(void)
-{
-	LCMDBG("\n");
-
-	mutex_lock(&panel_lock);
-	spadewvga_panel_power(1);
-	lcm_auo_write_seq(auo_init_seq, ARRAY_SIZE(auo_init_seq));
-	mutex_unlock(&panel_lock);
-	return 0;
-}
-
-static int spade_auo_panel_unblank(struct platform_device *pdev)
-{
-	LCMDBG("\n");
-
-	if (spade_auo_panel_init())
-		printk(KERN_ERR "spade_auo_panel_init failed\n");
-
-#if 0
-	if (color_enhancement == 0) {
-		spade_mdp_color_enhancement(mdp_pdata.mdp_dev);
-		color_enhancement = 1;
-	}
-#endif
-	atomic_set(&lcm_init_done, 1);
-	spade_adjust_backlight(last_val);
-
-	return 0;
-}
-
-static int spade_auo_panel_blank(struct platform_device *pdev)
-{
-	LCMDBG("\n");
-	spade_adjust_backlight(0);
-	atomic_set(&lcm_init_done, 0);
-	mutex_lock(&panel_lock);
-	lcm_auo_write_seq(auo_uninit_seq, ARRAY_SIZE(auo_uninit_seq));
-	mutex_unlock(&panel_lock);
-        spadewvga_panel_power(0);
-
-	return 0;
 }
 
 /* AUO N90 */
@@ -691,48 +648,6 @@ static struct lcm_cmd auo_n90_sleep_in_seq[] = {
 	{0x1, 0x4f}, {0x0, 0x00}, {0x2, 0x01},
 };
 
-static int spade_auo_n90_panel_init(void)
-{
-	LCMDBG("\n");
-
-	mutex_lock(&panel_lock);
-	spadewvga_panel_power(1);
-	lcm_auo_write_seq(auo_n90_init_seq, ARRAY_SIZE(auo_n90_init_seq));
-	mutex_unlock(&panel_lock);
-	return 0;
-}
-
-static int spade_auo_n90_panel_unblank(struct platform_device *pdev)
-{
-	LCMDBG("\n");
-	if (spade_auo_n90_panel_init())
-		printk(KERN_ERR "spade_auo_panel_init failed\n");
-
-#if 0
-	if (color_enhancement == 0) {
-		spade_mdp_color_enhancement(mdp_pdata.mdp_dev);
-		color_enhancement = 1;
-	}
-#endif
-	atomic_set(&lcm_init_done, 1);
-	spade_adjust_backlight(last_val);
-
-	return 0;
-}
-
-static int spade_auo_n90_panel_blank(struct platform_device *pdev)
-{
-	LCMDBG("\n");
-	spade_adjust_backlight(0);
-	atomic_set(&lcm_init_done, 0);
-	mutex_lock(&panel_lock);
-	lcm_auo_write_seq(auo_n90_uninit_seq, ARRAY_SIZE(auo_n90_uninit_seq));
-	mutex_unlock(&panel_lock);
-        spadewvga_panel_power(0);
-
-	return 0;
-}
-
 /* SHARP */
 #define LCM_CMD(_cmd, ...)                                      \
 {                                                               \
@@ -763,23 +678,27 @@ static int lcm_sharp_write_seq(struct spi_msg *cmd_table, unsigned size)
 	return 0;
 }
 
-static int spade_sharp_panel_init(void)
+static int lcdc_spade_panel_on(struct platform_device *pdev)
 {
-        LCMDBG("\n");
-
-        mutex_lock(&panel_lock);
-        spadewvga_panel_power(1);
-        lcm_sharp_write_seq(sharp_init_seq, ARRAY_SIZE(sharp_init_seq));
-        mutex_unlock(&panel_lock);
-        return 0;
-}
-
-static int spade_sharp_panel_unblank(struct platform_device *pdev)
-{
+	screen_on = true;	
 	LCMDBG("\n");
-
-	if (spade_sharp_panel_init())
-		printk(KERN_ERR "spade_auo_panel_init failed\n");
+	mutex_lock(&panel_lock);
+	
+	switch (panel_type) {
+		case PANEL_AUO:
+			lcm_auo_write_seq(auo_init_seq, ARRAY_SIZE(auo_init_seq));
+			LCMDBG(": init auo_panel\n");
+			break;
+		case PANEL_ID_SPADE_AUO_N90:
+			lcm_auo_write_seq(auo_n90_init_seq, ARRAY_SIZE(auo_n90_init_seq));
+			LCMDBG(": init auo_n90_panel\n");
+			break;
+		case PANEL_SHARP:
+		case PANEL_ID_SPADE_SHA_N90:
+			lcm_sharp_write_seq(sharp_init_seq, ARRAY_SIZE(sharp_init_seq));
+			LCMDBG(": init sharp_panel\n");
+			break;
+	}
 
 #if 0
 	if (color_enhancement == 0) {
@@ -787,34 +706,41 @@ static int spade_sharp_panel_unblank(struct platform_device *pdev)
 		color_enhancement = 1;
 	}
 #endif
+
+	mutex_unlock(&panel_lock);
+		
+	LCMDBG(": backlight to %d\n", last_val);
 	atomic_set(&lcm_init_done, 1);
 	spade_adjust_backlight(last_val);
-
-        return 0;
+	return 0;
 }
 
-static int spade_sharp_panel_blank(struct platform_device *pdev)
+static int lcdc_spade_panel_off(struct platform_device *pdev)
 {
-	LCMDBG("\n");
+	screen_on = false;
+	LCMDBG(": backlight off\n");
 	spade_adjust_backlight(0);
 	atomic_set(&lcm_init_done, 0);
-
-        mutex_lock(&panel_lock);
-        lcm_sharp_write_seq(sharp_uninit_seq, ARRAY_SIZE(sharp_uninit_seq));
-	screen_on = false;
-        mutex_unlock(&panel_lock);
-        spadewvga_panel_power(0);
-
-        return 0;
+	
+	mutex_lock(&panel_lock);
+	switch (panel_type) {
+		case PANEL_AUO:
+			lcm_auo_write_seq(auo_uninit_seq, ARRAY_SIZE(auo_uninit_seq));
+			LCMDBG(": uninit auo_panel\n");
+			break;
+		case PANEL_ID_SPADE_AUO_N90:
+			lcm_auo_write_seq(auo_n90_uninit_seq, ARRAY_SIZE(auo_n90_uninit_seq));
+			LCMDBG(": uninit auo_n90_panel\n");
+			break;
+		case PANEL_SHARP:
+		case PANEL_ID_SPADE_SHA_N90:
+			lcm_sharp_write_seq(sharp_uninit_seq, ARRAY_SIZE(sharp_uninit_seq));
+			LCMDBG(": uninit sharp_panel\n");
+			break;
+	}
+	mutex_unlock(&panel_lock);   
+	return 0;
 }
-
-static struct platform_device this_device = {
-	.name	= "lcdc_panel",
-	.id	= 1,
-	.dev	= {
-		.platform_data = &spadewvga_panel_data,
-	},
-};
 
 /*----------------------------------------------------------------------------*/
 
@@ -848,9 +774,14 @@ static int spade_adjust_backlight(enum led_brightness val)
 	if (shrink_br == 0)
 		 data[0] = 0;
         data[1] = shrink_br;
-
-        microp_i2c_write(0x25, data, sizeof(data));
-        last_val = shrink_br ? shrink_br: last_val;
+	
+	if (screen_on == false && shrink_br > 0){	
+		LCMDBG(": screen is off,not setting brightness > 0, shrink_br=%d\n", shrink_br);
+		shrink_br = 0;
+	} else {
+		microp_i2c_write(0x25, data, sizeof(data));
+		last_val = shrink_br ? shrink_br: last_val;
+	  }	
         mutex_unlock(&panel_lock);
 
 	return shrink_br;
@@ -862,6 +793,10 @@ static void spade_brightness_set(struct led_classdev *led_cdev,
 	if (atomic_read(&lcm_init_done) == 0) {
 		last_val = val ? val : last_val;
 		LCMDBG(":lcm not ready, val=%d\n", val);
+		return;
+	}
+	if (screen_on == false && val > 0){
+		LCMDBG(": screen is off,not setting brightness > 0, val=%d\n", val);
 		return;
 	}
 	led_cdev->brightness = spade_adjust_backlight(val);
@@ -900,8 +835,7 @@ static int __init spadewvga_init_panel(void)
 	int ret;
 
 	/* set gpio to proper state in the beginning */
-	if (panel_power_gpio)
-		(*panel_power_gpio)(1);
+	spadewvga_panel_power(1);
 
 	wake_lock_init(&panel_idle_lock, WAKE_LOCK_SUSPEND,
 			"backlight_present");
@@ -975,6 +909,19 @@ int spade_panel_sleep_in(void)
 	return ret;
 }
 
+static struct msm_fb_panel_data spadewvga_panel_data= {
+	.on = lcdc_spade_panel_on,
+	.off = lcdc_spade_panel_off,
+};
+
+static struct platform_device this_device = {
+	.name	= "lcdc_panel",
+	.id	= 1,
+	.dev	= {
+		.platform_data = &spadewvga_panel_data,
+	},
+};
+
 static int __init spadewvga_init(void)
 {
 	int ret;
@@ -1013,9 +960,7 @@ static int __init spadewvga_init(void)
             pinfo->lcdc.h_pulse_width = 2;
             pinfo->lcdc.v_back_porch = 5;
             pinfo->lcdc.v_front_porch = 2;
-            pinfo->lcdc.v_pulse_width = 2;
-            spadewvga_panel_data.on = spade_auo_panel_unblank;
-            spadewvga_panel_data.off = spade_auo_panel_blank;
+            pinfo->lcdc.v_pulse_width = 2;            
             break;
           case PANEL_ID_SPADE_AUO_N90:
             pinfo->lcdc.h_back_porch = 8;
@@ -1023,9 +968,7 @@ static int __init spadewvga_init(void)
             pinfo->lcdc.h_pulse_width = 4;
             pinfo->lcdc.v_back_porch = 8;
             pinfo->lcdc.v_front_porch = 8;
-            pinfo->lcdc.v_pulse_width = 4;
-            spadewvga_panel_data.on = spade_auo_n90_panel_unblank;
-            spadewvga_panel_data.off = spade_auo_n90_panel_blank;
+            pinfo->lcdc.v_pulse_width = 4;            
             break;
           case PANEL_SHARP:
           case PANEL_ID_SPADE_SHA_N90:
@@ -1035,9 +978,7 @@ static int __init spadewvga_init(void)
             pinfo->lcdc.h_pulse_width = 6;
             pinfo->lcdc.v_back_porch = 6;
             pinfo->lcdc.v_front_porch = 3;
-            pinfo->lcdc.v_pulse_width = 3;
-            spadewvga_panel_data.on = spade_sharp_panel_unblank;
-            spadewvga_panel_data.off = spade_sharp_panel_blank;
+            pinfo->lcdc.v_pulse_width = 3;            
             break;
           default:
             return -EINVAL;
