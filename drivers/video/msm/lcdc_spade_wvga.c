@@ -874,6 +874,8 @@ static struct platform_driver this_driver = {
 
 int spade_panel_sleep_in(void)
 {
+	return 0;
+#if 0
 	int ret;
 
 	mutex_lock(&panel_lock);
@@ -907,6 +909,7 @@ int spade_panel_sleep_in(void)
 	}
 	mutex_unlock(&panel_lock);
 	return ret;
+#endif
 }
 
 static struct msm_fb_panel_data spadewvga_panel_data= {
